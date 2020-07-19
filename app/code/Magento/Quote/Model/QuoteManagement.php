@@ -494,6 +494,8 @@ class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
      */
     protected function submitQuote(QuoteEntity $quote, $orderData = [])
     {
+        //clone the  quote object
+        $clonedQuote = clone $quote;
         $order = $this->orderFactory->create();
         $this->submitQuoteValidator->validateQuote($quote);
         if (!$quote->getCustomerIsGuest()) {
@@ -559,8 +561,17 @@ class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
                 'quote' => $quote
             ]
         );
+
+        //place the order
         try {
             $order = $this->orderManagement->place($order);
+        } catch (\Exception $e) {
+            $this->rollbackAddresses($quote, $order, $e);
+            throw $e;
+        }
+
+        //save the quote
+        try {
             $quote->setIsActive(false);
             $this->eventManager->dispatch(
                 'sales_model_service_quote_submit_success',
@@ -571,8 +582,8 @@ class QuoteManagement implements \Magento\Quote\Api\CartManagementInterface
             );
             $this->quoteRepository->save($quote);
         } catch (\Exception $e) {
-            $this->rollbackAddresses($quote, $order, $e);
-            throw $e;
+            $clonedQuote->setIsActive(false);
+            $this->quoteRepository->save($clonedQuote);
         }
         return $order;
     }
